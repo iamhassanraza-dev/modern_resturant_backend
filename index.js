@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const path = require('path');
 const connectDB = require('./src/db/database');
+const authRoutes = require('./src/routes/auth.routes');
 
 
 
@@ -34,6 +35,10 @@ app.use("/uploads", express.static("uploads"));
 
 //database connection
 connectDB();
+
+
+//routes
+app.use('/api/v1/auth', authRoutes);
 
 
 //home route
