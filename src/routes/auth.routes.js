@@ -11,9 +11,6 @@ router.post('/login', authController.loginUser);
 router.post('/request-password-reset', authController.requestPasswordReset);
 router.post('/reset-password', authController.resetUserPassword);
 
-// Protected routes (user authentication required)
-router.get('/profile', auth(), authController.getUserProfile);
-router.put('/profile', auth(), authController.updateUserProfile);
 
 // export router
 module.exports = router;

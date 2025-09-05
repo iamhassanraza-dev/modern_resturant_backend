@@ -123,99 +123,6 @@ exports.loginUser = async (req, res) => {
     }
 };
 
-
-// Get User profile
-exports.getUserProfile = async (req, res) => {
-    try {
-        // user info is already attached by auth middleware
-        const userId = req.user?._id;
-
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized access. User authentication required.",
-                error: "UNAUTHORIZED"
-            });
-        }
-
-        const user = await UserModel.findById(userId).select('-password');
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found.",
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        return res.status(200).json({
-            success: true,
-            message: "User profile fetched successfully.",
-            user
-        });
-
-    } catch (error) {
-        console.error("Error in getUserProfile:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Server error while fetching user profile. Please try again later.",
-            error: "SERVER_ERROR"
-        });
-    }
-};
-
-// Update User profile
-exports.updateUserProfile = async (req, res) => {
-    try {
-        // Ensure user is attached by middleware
-        const userId = req.user?._id;
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                message: "Unauthorized access. User authentication required.",
-                error: "UNAUTHORIZED"
-            });
-        }
-
-        const { name } = req.body;
-        const profileImage = req.file?.path || null;
-
-        // Fetch user from DB
-        const user = await UserModel.findById(userId);
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found.",
-                error: "USER_NOT_FOUND"
-            });
-        }
-
-        // Update fields if provided
-        if (name) user.name = name.trim();
-        if (profileImage) user.profileImage = profileImage;
-
-        await user.save();
-
-        return res.status(200).json({
-            success: true,
-            message: "Profile updated successfully.",
-            user: {
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                profileImage: user.profileImage
-            }
-        });
-
-    } catch (error) {
-        console.error("Error in updateUserProfile:", error);
-        return res.status(500).json({
-            success: false,
-            message: "Server error while updating profile. Please try again later.",
-            error: "SERVER_ERROR"
-        });
-    }
-};
-
 exports.requestPasswordReset = async (req, res) => {
     try {
         const { email } = req.body;
@@ -414,3 +321,179 @@ exports.resetUserPassword = async (req, res) => {
 };  
 
 
+
+// request customer account 
+exports.requestCustomerAccount = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email is required."
+            });
+        }
+
+
+        // Validate email
+        const emailResult = await isValidEmail(email);
+        if (!emailResult.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Please enter a valid email address.",
+                errors: emailResult.errors,
+                warnings: emailResult.warnings
+            });
+        }
+
+
+        // Find user
+        const user = await UserModel.findOne({ email });
+        if (user) {
+            return res.status(400).json({
+                success: false,
+                message: "User already exists with this email."
+            });
+        }
+
+        // Generate OTP
+        const otp = generateOTP(6); // 6 character alphanumeric OTP
+
+        // Save OTP and expiry
+        const newOtp = new OtpModel({ 
+            email, 
+            otp 
+        });
+        await newOtp.save();
+
+        // Load HTML template
+        const templatePath = path.join(__dirname, '../templates/customerAccountRequest.html');
+        let emailTemplate = fs.readFileSync(templatePath, 'utf8');
+
+        // Replace placeholders
+        emailTemplate = emailTemplate
+            .replace(/{{email}}/g, email)
+            .replace(/{{otpCode}}/g, otp)
+            .replace(/{{expiryTime}}/g, '10');
+
+        
+            //email payload
+            const emailPayload = {
+                to: email,
+                subject: '🔐 Customer Account Request - Restaurant Management System',
+                html: emailTemplate
+            };
+            
+            //send email
+            const emailsend = await transporter.sendMail(emailPayload);
+            console.log(emailsend);
+            if (emailsend.error) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to send email."
+                });
+            }
+            return res.status(200).json({
+                success: true,
+                message: "Customer account request has been sent to your email."
+            });
+
+    } catch (error) {
+        console.error("Error in requestCustomerAccount:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error. Please try again later."
+        });
+    }
+};
+
+
+
+
+// register customer
+exports.registerCustomer = async (req, res) => {
+    try {
+        const { email, otp, name, password } = req.body;
+
+        if (!email || !otp || !name || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Email, OTP, name, and password are required."
+            });
+        }
+
+        // Validate email
+        const emailResult = await isValidEmail(email);
+        if (!emailResult.isValid) {
+            return res.status(400).json({
+                success: false,
+                message: "Please enter a valid email address.",
+                errors: emailResult.errors,
+                warnings: emailResult.warnings
+            });
+        }
+
+
+
+        // Validate password
+        const passwordResult = isStrongPassword(password, true);
+        if (passwordResult !== true) {
+            return res.status(400).json({
+                success: false,
+                message: "Password is not strong enough.",
+                errors: Array.isArray(passwordResult) ? passwordResult : [passwordResult]
+            });
+        }
+
+
+        // Find OTP record and see if it is not used
+        const otpRecord = await OtpModel.findOne({ email, otp, isUsed: true });
+        if (!otpRecord) {
+            return res.status(400).json({
+                success: false,
+                message: "invalid or unverified OTP. Please request a new one."
+            });
+        }
+
+        // Find user
+        const user = await UserModel.findOne({ email });
+        if (user) {
+            return res.status(400).json({
+                success: false,
+                message: "User already exists with this email."
+            });
+        }
+
+        // find role named customer
+        const customerRole = await RoleModel.findOne({ name: 'customer' });
+        if (!customerRole) {
+            return res.status(400).json({
+                success: false,
+                message: "Customer role not found."
+            });
+        }
+
+        // Hash password and create user
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new UserModel({ email, password: hashedPassword, name, isCustomer: true, role: customerRole._id });
+        await newUser.save();
+
+        // delete otpRecord
+        await OtpModel.findOneAndDelete({ email, otp, isUsed: true });
+
+
+
+
+        return res.status(200).json({
+            success: true,
+            message: "Customer registered successfully."
+        });
+
+    } catch (error) {
+        console.error("Error in registerCustomer:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error. Please try again later."
+        });
+    }
+};

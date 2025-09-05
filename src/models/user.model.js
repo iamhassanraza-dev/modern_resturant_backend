@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
   {
-    // Basic Info
+    // Basic Info (required)
     name: {
       type: String,
       required: true,
@@ -21,7 +21,8 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true
+      required: true,
+      trim: true
     },
     profileImage: {
       type: String,
